@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sanal Voltametri Laboratuvarı</title>
+    <title>Sanal Voltammetri Laboratuvarı</title>
     
     <!-- Tailwind CSS (Stil için) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -151,6 +151,8 @@
                     <div id="ph-table-container" class="space-y-2 max-h-[400px] overflow-auto pr-2">
                         <!-- Rows injected by JS -->
                     </div>
+                    
+                    <!-- Eğitim Kartı 1 -->
                     <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r shadow-sm my-4">
                         <div class="flex items-center gap-2 mb-2 text-blue-700 font-bold text-sm">
                             <i class="fa-solid fa-book-open"></i> Proton Transferi
@@ -158,6 +160,17 @@
                         <div class="text-xs text-slate-700">
                             Pik potansiyeli (Ep) pH değiştikçe kayıyorsa, reaksiyona protonlar (H⁺) dahil oluyor demektir.<br>
                             <span class="mt-2 block bg-yellow-100 p-1 rounded text-yellow-800 font-mono">Eğim ≈ 59 mV/pH ise: n = p</span>
+                        </div>
+                    </div>
+
+                    <!-- Eğitim Kartı 2 (YENİ EKLENEN) -->
+                    <div class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded-r shadow-sm my-4">
+                        <div class="flex items-center gap-2 mb-2 text-purple-700 font-bold text-sm">
+                            <i class="fa-solid fa-microscope"></i> pKa Tayini ve Mekanizma
+                        </div>
+                        <div class="text-xs text-slate-700">
+                            <p class="mb-2">Potansiyel-pH grafiğinde doğrusal olmayan değişimler veya eğim değişiklikleri (kırılma noktaları), maddenin <strong>pKa (asitlik sabiti)</strong> değerini işaret edebilir.</p>
+                            <p>Eğer eğim <strong>59 mV/pH</strong> değerinden önemli ölçüde sapıyorsa (örn: 30 mV/pH), proton/elektron oranı 1:1 olmayabilir (örn: 2e⁻/1H⁺).</p>
                         </div>
                     </div>
                 </div>
@@ -489,7 +502,7 @@
                         backgroundColor: '#0d9488',
                         pointRadius: 6
                     }, {
-                        label: 'Regresyon',
+                        label: `Regresyon`,
                         data: regression.lineData,
                         type: 'line',
                         borderColor: '#f97316',
@@ -501,11 +514,65 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'pH vs Potansiyel Grafiği',
+                            font: { size: 16 }
+                        },
+                        subtitle: {
+                            display: true,
+                            text: `Denklem: Ep = ${regression.slope.toFixed(2)}pH + ${regression.intercept.toFixed(2)}`,
+                            font: { size: 14, style: 'italic' },
+                            color: '#666',
+                            padding: { bottom: 20 }
+                        }
+                    },
                     scales: {
                         x: { title: { display: true, text: 'pH' } },
                         y: { title: { display: true, text: 'Potansiyel (mV)' } }
                     }
-                }
+                },
+                plugins: [{
+                    id: 'slopeLabel',
+                    afterDraw: (chart) => {
+                        const ctx = chart.ctx;
+                        const xAxis = chart.scales.x;
+                        const yAxis = chart.scales.y;
+                        
+                        // Regresyon verilerini al (dataset index 1)
+                        const dataset = chart.data.datasets[1];
+                        if (dataset.data.length < 2) return;
+
+                        // Orta noktayı bul (veri seti üzerinden)
+                        const p1 = dataset.data[0];
+                        const p2 = dataset.data[dataset.data.length - 1];
+                        
+                        // Koordinatları piksele çevir
+                        const x1 = xAxis.getPixelForValue(p1.x);
+                        const y1 = yAxis.getPixelForValue(p1.y);
+                        const x2 = xAxis.getPixelForValue(p2.x);
+                        const y2 = yAxis.getPixelForValue(p2.y);
+                        
+                        // Basit orta nokta
+                        const midX = (x1 + x2) / 2;
+                        const midY = (y1 + y2) / 2;
+                        
+                        // Metni hazırla
+                        const slopeVal = regression.slope.toFixed(2);
+                        const text = `m = ${slopeVal} mV/pH`;
+
+                        ctx.save();
+                        ctx.font = 'bold 14px Arial';
+                        ctx.fillStyle = '#f97316';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        
+                        // Yazıyı çizginin biraz üstüne yaz
+                        ctx.fillText(text, midX, midY - 10);
+                        ctx.restore();
+                    }
+                }]
             });
         }
 
