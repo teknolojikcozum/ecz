@@ -1,0 +1,490 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  ScatterChart, Scatter, ReferenceLine, AreaChart, Area 
+} from 'recharts';
+import { 
+  Calculator, Activity, TrendingUp, FlaskConical, RotateCcw, 
+  Plus, Trash2, Info, BookOpen, Lightbulb, Zap 
+} from 'lucide-react';
+
+// --- Yardımcı Bileşenler ---
+
+// Eğitim Notu Kartı (Animasyonlu)
+const LessonNote = ({ title, children, icon: Icon = BookOpen }) => (
+  <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r shadow-sm my-4 transition-all duration-500 hover:shadow-md hover:translate-x-1">
+    <div className="flex items-center gap-2 mb-2 text-blue-700 font-bold">
+      <Icon size={18} />
+      <span>{title}</span>
+    </div>
+    <div className="text-sm text-slate-700 leading-relaxed">
+      {children}
+    </div>
+  </div>
+);
+
+// Sonuç Kartı (Animasyonlu)
+const ResultCard = ({ label, value, unit, description, color = "indigo" }) => (
+  <div className={`bg-white p-6 rounded-xl shadow border border-${color}-100 flex flex-col items-center justify-center text-center transition-all duration-300 transform hover:scale-105`}>
+    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">{label}</h3>
+    <div className={`text-4xl font-extrabold text-${color}-600 mb-2 flex items-end gap-1`}>
+      {value} <span className="text-lg text-slate-400 font-medium mb-1">{unit}</span>
+    </div>
+    <p className="text-xs text-slate-500">{description}</p>
+  </div>
+);
+
+// --- Hesaplama Mantığı ---
+
+const calculateRegression = (data, xKey, yKey) => {
+  const n = data.length;
+  if (n < 2) return { slope: 0, intercept: 0, r2: 0, lineData: [] };
+
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, sumYY = 0;
+
+  data.forEach(item => {
+    const x = parseFloat(item[xKey]) || 0;
+    const y = parseFloat(item[yKey]) || 0;
+    sumX += x; sumY += y; sumXY += x * y; sumXX += x * x; sumYY += y * y;
+  });
+
+  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  
+  const ssTot = sumYY - (sumY * sumY) / n;
+  const ssRes = sumYY - slope * sumXY - intercept * sumY;
+  const r2 = ssTot !== 0 ? (1 - (ssRes / ssTot)) : 0;
+
+  const xValues = data.map(d => parseFloat(d[xKey])).filter(v => !isNaN(v));
+  const minX = Math.min(...xValues);
+  const maxX = Math.max(...xValues);
+  
+  const lineData = [
+    { [xKey]: minX, [yKey]: slope * minX + intercept },
+    { [xKey]: maxX, [yKey]: slope * maxX + intercept }
+  ];
+
+  return { slope, intercept, r2: r2 || 0, lineData };
+};
+
+// --- Ana Uygulama ---
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('surface');
+  const [animateElectrons, setAnimateElectrons] = useState(false);
+
+  // --- State: Yüzey Alanı ---
+  const [rsParams, setRsParams] = useState({
+    ip: 10.0, n: 1, c: 1.0, d: 1.0, v: 100, temp: 298
+  });
+  const [surfaceArea, setSurfaceArea] = useState(0);
+
+  // --- State: pH Etkisi ---
+  const [phData, setPhData] = useState([
+    { id: 1, ph: 2.0, ep: 1200 },
+    { id: 2, ph: 4.0, ep: 1080 },
+    { id: 3, ph: 7.0, ep: 900 },
+  ]);
+
+  // --- State: Kinetik (Scan Rate) ---
+  const [scanData, setScanData] = useState([
+    { id: 1, v: 25, ip: 15.0, ep: 500 },
+    { id: 2, v: 50, ip: 22.0, ep: 510 },
+    { id: 3, v: 100, ip: 32.0, ep: 520 },
+  ]);
+
+  // --- State: Kalibrasyon ---
+  const [calData, setCalData] = useState([
+    { id: 1, conc: 10, ip: 5.0 },
+    { id: 2, conc: 50, ip: 25.0 },
+    { id: 3, conc: 100, ip: 48.0 },
+  ]);
+  const [blankStdDev, setBlankStdDev] = useState(0.5);
+
+  // --- Hesaplamalar ---
+  const calculateSurfaceArea = () => {
+    // Ip = 0.4463 * nF * A * C * sqrt(nFvD/RT)
+    const F = 96485; const R = 8.314;
+    const { ip, n, c, d, v, temp } = rsParams;
+    
+    // Değerlerin sayısal olup olmadığını kontrol et
+    if (isNaN(ip) || isNaN(n) || isNaN(c) || isNaN(d) || isNaN(v) || isNaN(temp) || 
+        n <= 0 || c <= 0 || v <= 0 || d <= 0) { 
+        setSurfaceArea(0); 
+        return; 
+    }
+
+    const Ip_A = ip * 1e-6;
+    const C_mol_cm3 = c * 1e-6; 
+    const D_cm2_s = d * 1e-6;
+    const v_V_s = v / 1000;
+    
+    const term1 = 0.4463;
+    const term2 = n * F * C_mol_cm3;
+    const sqrtTerm = Math.sqrt((n * F * v_V_s * D_cm2_s) / (R * temp));
+    
+    const Area = Ip_A / (term1 * term2 * sqrtTerm);
+    setSurfaceArea(isNaN(Area) || !isFinite(Area) ? 0 : Area.toFixed(4));
+    
+    // Animasyonu tetikle
+    setAnimateElectrons(true);
+    setTimeout(() => setAnimateElectrons(false), 2000);
+  };
+
+  useEffect(() => { calculateSurfaceArea(); }, [rsParams]);
+
+  // Regresyon Hesaplamaları
+  const phRegression = calculateRegression(phData, 'ph', 'ep');
+  
+  const logScanData = scanData.map(d => ({
+    logV: d.v > 0 ? Math.log10(d.v).toFixed(3) : 0,
+    logIp: d.ip > 0 ? Math.log10(d.ip).toFixed(3) : 0,
+    v: d.v, ip: d.ip
+  }));
+  const scanRegression = calculateRegression(logScanData, 'logV', 'logIp');
+  
+  const calRegression = calculateRegression(calData, 'conc', 'ip');
+  const LOD = calRegression.slope !== 0 ? (3 * blankStdDev) / calRegression.slope : 0;
+  const LOQ = calRegression.slope !== 0 ? (10 * blankStdDev) / calRegression.slope : 0;
+
+  // --- Ortak Tablo Fonksiyonları ---
+  const addRow = (setter, data) => {
+    const newId = data.length ? Math.max(...data.map(d => d.id)) + 1 : 1;
+    const keys = Object.keys(data[0]).filter(k => k !== 'id');
+    const newRow = { id: newId };
+    keys.forEach(k => newRow[k] = 0);
+    setter([...data, newRow]);
+  };
+
+  const updateRow = (setter, data, id, key, val) => {
+    // NaN kontrolü eklenmiş güncelleme fonksiyonu
+    let value = val;
+    if (val !== '') {
+      const parsed = parseFloat(val);
+      // Eğer sayı geçerli değilse (NaN), boş string olarak kaydet
+      value = isNaN(parsed) ? '' : parsed;
+    }
+    setter(data.map(r => r.id === id ? { ...r, [key]: value } : r));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 p-2 md:p-6 transition-colors duration-500">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Header */}
+        <header className="mb-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-4 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-10 -mt-10 opacity-50 blur-2xl"></div>
+          <div className="p-3 bg-indigo-100 rounded-full text-indigo-600">
+            <FlaskConical size={32} />
+          </div>
+          <div className="text-center md:text-left z-10">
+            <h1 className="text-3xl font-bold text-slate-900">Sanal Voltammetri Laboratuvarı</h1>
+            <p className="text-slate-500 mt-1">Elektrokimyasal verileri analiz edin, hesaplayın ve öğrenin.</p>
+          </div>
+        </header>
+
+        {/* Navigation Tabs */}
+        <div className="flex flex-wrap gap-3 mb-6 justify-center md:justify-start">
+          {[
+            { id: 'surface', label: 'Yüzey Alanı', icon: <Zap size={18} /> },
+            { id: 'ph', label: 'pH Etkisi', icon: <Activity size={18} /> },
+            { id: 'scan', label: 'Kinetik (Scan Rate)', icon: <TrendingUp size={18} /> },
+            { id: 'calibration', label: 'Kalibrasyon (LOD/LOQ)', icon: <Calculator size={18} /> }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-300 transform hover:-translate-y-1 ${
+                activeTab === tab.id 
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* --- İçerik Alanı --- */}
+        <div className="animate-fadeIn">
+          
+          {/* 1. Yüzey Alanı */}
+          {activeTab === 'surface' && (
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-6 border-b pb-2">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Zap className="text-yellow-500"/> Deney Parametreleri
+                  </h2>
+                  <button onClick={() => setRsParams({ip:10, n:1, c:1, d:1, v:100, temp:298})} className="text-xs text-slate-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
+                    <RotateCcw size={14}/> Sıfırla
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   {[
+                     { k: 'ip', l: 'Pik Akımı (Ip)', u: 'µA' },
+                     { k: 'n', l: 'Elektron Sayısı (n)', u: 'e⁻' },
+                     { k: 'c', l: 'Konsantrasyon (C)', u: 'mM' },
+                     { k: 'd', l: 'Difüzyon Kats. (D)', u: 'x10⁻⁶ cm²/s' },
+                     { k: 'v', l: 'Tarama Hızı (v)', u: 'mV/s' },
+                     { k: 'temp', l: 'Sıcaklık (T)', u: 'K' }
+                   ].map(field => (
+                     <div key={field.k} className="group">
+                       <label className="block text-xs font-semibold text-slate-500 mb-1 group-focus-within:text-indigo-600 transition-colors">{field.l}</label>
+                       <div className="relative">
+                         <input 
+                           type="number"
+                           value={rsParams[field.k]}
+                           onChange={(e) => {
+                             // Güvenli input değişimi
+                             let val = e.target.value;
+                             if (val !== '') {
+                               const parsed = parseFloat(val);
+                               val = isNaN(parsed) ? '' : parsed;
+                             }
+                             setRsParams({...rsParams, [field.k]: val});
+                           }}
+                           className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-sm"
+                         />
+                         <span className="absolute right-3 top-3 text-xs text-slate-400 font-medium">{field.u}</span>
+                       </div>
+                     </div>
+                   ))}
+                </div>
+
+                <LessonNote title="Randles-Ševčik Denklemi Nedir?" icon={Lightbulb}>
+                  Bu denklem, tersinir (reversible) bir redoks işleminde <strong>pik akımı (Ip)</strong> ile tarama hızı, konsantrasyon ve difüzyon katsayısı arasındaki ilişkiyi açıklar. Eğer elektrot yüzeyi (A) artarsa, pik akımı da doğrusal olarak artar.
+                </LessonNote>
+              </div>
+
+              <div className="flex flex-col gap-6">
+                {/* Animasyonlu Sonuç */}
+                <div className="relative bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-2xl shadow-xl text-white overflow-hidden">
+                  {/* Dekoratif halkalar */}
+                  <div className={`absolute top-0 right-0 w-48 h-48 bg-white opacity-10 rounded-full blur-3xl transform -translate-y-10 translate-x-10 ${animateElectrons ? 'animate-pulse' : ''}`}></div>
+                  
+                  <div className="relative z-10 text-center">
+                    <h3 className="text-indigo-100 font-medium mb-1">Hesaplanan Elektroaktif Yüzey Alanı</h3>
+                    <div className="text-6xl font-bold mb-2 tracking-tight flex justify-center items-baseline gap-2">
+                      {surfaceArea} 
+                      <span className="text-2xl opacity-60 font-normal">cm²</span>
+                    </div>
+                    <div className="text-xs bg-white/20 inline-block px-3 py-1 rounded-full text-indigo-50 backdrop-blur-sm">
+                      Ip = 0.4463 nFAC √(nFvD/RT)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Görselleştirme */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 flex-grow flex flex-col items-center justify-center relative">
+                   <h4 className="text-sm font-bold text-slate-400 uppercase mb-4 absolute top-6 left-6">Elektrot Yüzey Simülasyonu</h4>
+                   
+                   {/* Elektrot Çubuğu */}
+                   <div className="relative w-32 h-40 bg-slate-200 rounded-t-lg border-x-4 border-t-4 border-slate-300 flex items-end justify-center overflow-hidden">
+                      {/* Aktif Yüzey (Renklenen kısım) */}
+                      <div 
+                        className="w-full bg-indigo-500 transition-all duration-1000 ease-out relative"
+                        style={{ height: `${Math.min(parseFloat(surfaceArea || 0) * 20, 100)}%` }} // Yüzey alanına göre boyu değişir
+                      >
+                         {/* Elektron Animasyonu */}
+                         <div className="absolute inset-0 w-full h-full opacity-30 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+                      </div>
+                   </div>
+                   <div className="w-48 h-4 bg-slate-300 rounded-full mt-[-2px] z-10 shadow-sm"></div>
+                   
+                   <p className="mt-4 text-center text-sm text-slate-500 max-w-xs">
+                     <span className="text-indigo-600 font-bold">Mavi Alan:</span> Elektroaktif yüzeyi temsil eder. Değer büyüdükçe bu alan artar ve daha fazla elektron transferi gerçekleşir.
+                   </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 2. pH Etkisi */}
+          {activeTab === 'ph' && (
+            <div className="grid md:grid-cols-12 gap-6">
+              <div className="md:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-slate-700">Deney Verileri (pH vs E)</h3>
+                  <button onClick={() => addRow(setPhData, phData)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition"><Plus size={18}/></button>
+                </div>
+                <div className="space-y-2 max-h-[400px] overflow-auto pr-2">
+                  {phData.map((row, idx) => (
+                    <div key={row.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 animate-fadeIn" style={{animationDelay: `${idx*100}ms`}}>
+                      <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">{idx+1}</div>
+                      <input 
+                        type="number" placeholder="pH" 
+                        value={row.ph} 
+                        onChange={(e) => updateRow(setPhData, phData, row.id, 'ph', e.target.value)}
+                        className="w-20 p-1 bg-white border rounded text-center text-sm"
+                      />
+                      <span className="text-slate-400">→</span>
+                      <input 
+                        type="number" placeholder="mV" 
+                        value={row.ep} 
+                        onChange={(e) => updateRow(setPhData, phData, row.id, 'ep', e.target.value)}
+                        className="w-20 p-1 bg-white border rounded text-center text-sm"
+                      />
+                      <button onClick={() => setPhData(phData.filter(d => d.id !== row.id))} className="ml-auto text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
+                    </div>
+                  ))}
+                </div>
+                <LessonNote title="Proton Transferi" icon={BookOpen}>
+                  Pik potansiyeli (Ep) pH değiştikçe kayıyorsa, reaksiyona protonlar (H⁺) dahil oluyor demektir. 
+                  <br/>
+                  <span className="text-xs mt-2 block bg-yellow-100 p-1 rounded text-yellow-800">
+                    Eğim ≈ 59 mV/pH ise: Elektron sayısı = Proton sayısı.
+                  </span>
+                </LessonNote>
+              </div>
+
+              <div className="md:col-span-8 space-y-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[400px]">
+                  <h3 className="font-bold text-slate-700 mb-4">pH - Potansiyel Grafiği</h3>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis type="number" dataKey="ph" name="pH" domain={['auto', 'auto']} label={{ value: 'pH', position: 'bottom', offset: 0 }} />
+                      <YAxis type="number" dataKey="ep" name="Ep" unit="mV" domain={['auto', 'auto']} label={{ value: 'Potansiyel (mV)', angle: -90, position: 'left' }} />
+                      <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                      <Scatter name="Veri Noktaları" data={phData} fill="#0d9488" r={6} />
+                      <Scatter name="Regresyon" data={phRegression.lineData} line={{ stroke: '#f97316', strokeWidth: 3, strokeDasharray: '5 5' }} shape={() => null} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <ResultCard label="Eğim (Slope)" value={phRegression.slope.toFixed(2)} unit="mV/pH" description="Her bir pH birimi için potansiyel değişimi." color="orange" />
+                  <ResultCard label="Korelasyon (R²)" value={phRegression.r2.toFixed(4)} unit="" description="Verilerin doğrusal modele uygunluğu (1.00 mükemmel)." color="teal" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Kinetik (Scan Rate) */}
+          {activeTab === 'scan' && (
+            <div className="grid md:grid-cols-12 gap-6">
+              <div className="md:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                 <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-slate-700">Kinetik Verileri</h3>
+                  <button onClick={() => addRow(setScanData, scanData)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition"><Plus size={18}/></button>
+                </div>
+                {/* Basitleştirilmiş tablo */}
+                <div className="max-h-[500px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-slate-500 uppercase bg-slate-50">
+                        <tr><th className="p-2">v (mV/s)</th><th className="p-2">Ip (µA)</th><th className="p-2">Ep (mV)</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {scanData.map(r => (
+                          <tr key={r.id} className="border-t">
+                            <td className="p-1"><input type="number" value={r.v} onChange={e=>updateRow(setScanData, scanData, r.id, 'v', e.target.value)} className="w-full text-center outline-none"/></td>
+                            <td className="p-1"><input type="number" value={r.ip} onChange={e=>updateRow(setScanData, scanData, r.id, 'ip', e.target.value)} className="w-full text-center outline-none"/></td>
+                            <td className="p-1"><input type="number" value={r.ep} onChange={e=>updateRow(setScanData, scanData, r.id, 'ep', e.target.value)} className="w-full text-center outline-none"/></td>
+                            <td className="p-1 text-center"><button onClick={()=>setScanData(scanData.filter(d=>d.id!==r.id))} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                </div>
+                <div className="mt-4">
+                   <LessonNote title="Difüzyon vs Adsorpsiyon" icon={Activity}>
+                     Reaksiyonun hız sınırlayıcı basamağını anlamak için <strong>log(Ip)</strong> ile <strong>log(v)</strong> grafiğinin eğimine bakarız.
+                     <ul className="mt-2 list-disc list-inside text-xs font-semibold">
+                       <li>Eğim ≈ 0.5 ise: Difüzyon Kontrollü (Madde çözeltiden geliyor)</li>
+                       <li>Eğim ≈ 1.0 ise: Adsorpsiyon Kontrollü (Madde yüzeye yapışmış)</li>
+                     </ul>
+                   </LessonNote>
+                </div>
+              </div>
+
+              <div className="md:col-span-8 flex flex-col gap-6">
+                 {/* Grafik Kartı */}
+                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex-grow">
+                    <h3 className="font-bold text-slate-700 mb-2 flex items-center justify-between">
+                      <span>Logaritmik Analiz (log Ip vs log v)</span>
+                      <span className={`text-xs px-2 py-1 rounded-full ${scanRegression.slope > 0.7 ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                         Tespit: {scanRegression.slope > 0.75 ? 'Adsorpsiyon Kontrolü' : 'Difüzyon Kontrolü'}
+                      </span>
+                    </h3>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer>
+                        <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" dataKey="logV" name="log v" label={{ value: 'log (Tarama Hızı)', position: 'bottom' }} domain={['auto', 'auto']} />
+                          <YAxis type="number" dataKey="logIp" name="log Ip" label={{ value: 'log (Akım)', angle: -90, position: 'left' }} domain={['auto', 'auto']} />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                          <Scatter name="Data" data={logScanData} fill="#6366f1" />
+                          <Scatter name="Fit" data={scanRegression.lineData} line={{ stroke: '#ec4899', strokeWidth: 3 }} shape={() => null} />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-between mt-4 px-4 py-2 bg-slate-50 rounded-lg text-sm">
+                       <span>Eğim (m): <strong>{scanRegression.slope.toFixed(3)}</strong></span>
+                       <span>R²: <strong>{scanRegression.r2.toFixed(4)}</strong></span>
+                    </div>
+                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. Kalibrasyon */}
+          {activeTab === 'calibration' && (
+             <div className="grid md:grid-cols-12 gap-6">
+                <div className="md:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="font-bold text-slate-700 mb-4">Konsantrasyon Verileri</h3>
+                  <div className="mb-4 p-3 bg-yellow-50 rounded border border-yellow-100">
+                    <label className="text-xs font-bold text-yellow-700 block mb-1">Kör Numune Std. Sapma (Sb)</label>
+                    <input type="number" value={blankStdDev} onChange={e=>setBlankStdDev(parseFloat(e.target.value))} className="w-full p-1 bg-white border border-yellow-200 rounded"/>
+                  </div>
+                  <div className="space-y-2">
+                    {calData.map((row, i) => (
+                      <div key={row.id} className="flex gap-2 animate-fadeIn" style={{animationDelay: `${i*100}ms`}}>
+                        <input type="number" placeholder="Kons." value={row.conc} onChange={e=>updateRow(setCalData, calData, row.id, 'conc', e.target.value)} className="w-full p-2 bg-slate-50 rounded border"/>
+                        <input type="number" placeholder="Akım" value={row.ip} onChange={e=>updateRow(setCalData, calData, row.id, 'ip', e.target.value)} className="w-full p-2 bg-slate-50 rounded border"/>
+                        <button onClick={()=>setCalData(calData.filter(d=>d.id!==row.id))} className="text-red-400"><Trash2 size={16}/></button>
+                      </div>
+                    ))}
+                    <button onClick={()=>addRow(setCalData, calData)} className="w-full py-2 bg-slate-100 rounded text-slate-500 hover:bg-slate-200 font-bold text-sm">+ Veri Ekle</button>
+                  </div>
+                </div>
+
+                <div className="md:col-span-8 flex flex-col gap-6">
+                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex-grow">
+                      <h3 className="font-bold text-slate-700 mb-4">Kalibrasyon Eğrisi</h3>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer>
+                          <ScatterChart>
+                             <CartesianGrid strokeDasharray="3 3" />
+                             <XAxis type="number" dataKey="conc" label={{ value: 'Konsantrasyon', position: 'bottom' }} />
+                             <YAxis type="number" dataKey="ip" label={{ value: 'Akım (µA)', angle: -90, position: 'left' }} />
+                             <Tooltip />
+                             <Scatter data={calData} fill="#0d9488" />
+                             <Scatter data={calRegression.lineData} line={{ stroke: '#f97316', strokeWidth: 2 }} shape={() => null} />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <ResultCard label="LOD (Tespit Limiti)" value={isFinite(LOD) ? LOD.toFixed(2) : '-'} unit="µM" description="3 × Sb / m" color="red" />
+                      <ResultCard label="LOQ (Tayin Limiti)" value={isFinite(LOQ) ? LOQ.toFixed(2) : '-'} unit="µM" description="10 × Sb / m" color="blue" />
+                      <ResultCard label="Hassasiyet (Eğim)" value={calRegression.slope.toFixed(3)} unit="µA/µM" description="Kalibrasyon eğimi" color="green" />
+                   </div>
+                   
+                   <LessonNote title="LOD ve LOQ Nedir?" icon={Info}>
+                     <strong>LOD (Limit of Detection):</strong> Cihazın "burada bir şey var" diyebileceği en düşük miktardır. 
+                     <br/>
+                     <strong>LOQ (Limit of Quantification):</strong> Cihazın "burada X kadar madde var" diyebileceği güvenilir ölçüm sınırıdır.
+                   </LessonNote>
+                </div>
+             </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
